@@ -1,44 +1,52 @@
 /** @jsx Didact.createElement */
-// babel에게 JSX를 만나면 React.createElement를 사용하지 말고 Didact.createElement를 사용하라고 명령
-// const element1 = (
-//   <div id="container">
-//     <h1 title="foo1">Hello Didact</h1>
-//     <p>가상 DOM의 구조를 확인해보세요.</p>
-//   </div>
-// );
 
-// const element2 = (
-//   <div id="container">
-//     <h1 title="foo2">Hello Didact</h1>
-//     <p>가상 DOM의 구조를 확인해보세요.</p>
-//   </div>
-// );
+function Counter() {
+  const [count, setCount] = Didact.useState(0);
+  const [other, setOther] = Didact.useState(0);
 
-// const container = document.getElementById("root");
+  // 케이스 1: 마운트 시 딱 한 번!
+  Didact.useEffect(() => {
+    console.log("✅ [Mount Only] 처음 한 번만 실행되어야 함");
+    return () =>
+      console.log("🧹 [Unmount Only] 컴포넌트가 사라질 때만 실행되어야 함");
+  }, []);
 
-// // 자식: element(가상 DOM 노드), 타겟 노드: <div id="root"></div>(실제 DOM 노드)
-// // 렌더 단계를 시작한다.
-// Didact.render(element1, container);
-// setTimeout(() => Didact.render(element2, container), 1000);
-
-function Component1(props) {
-  const [state, setState] = Didact.useState(0);
+  // 케이스 2: count가 바뀔 때만!
+  Didact.useEffect(() => {
+    console.log(`🚀 [Count Update] 실행! 현재 값: ${count}`);
+    return () =>
+      console.log(`🧼 [Count Cleanup] 이전 값(${count}) 치우는 중...`);
+  }, [count]);
 
   return (
-    <div id="app-container">
-      <div>
-        <button onClick={() => setState(0)}>똑같은 값 설정</button>
-        <span> 현재 상태: {state}</span>
-      </div>
+    <div style="border: 2px solid #ccc; padding: 10px;">
+      <h2>useEffect 테스트</h2>
+      <p>카운트: {count}</p>
+      <button onClick={() => setCount((c) => c + 1)}>
+        Count 증가 (이펙트 발생)
+      </button>
+
+      <p>다른 상태: {other}</p>
+      <button onClick={() => setOther((o) => o + 1)}>
+        Other 증가 (이펙트 미발생)
+      </button>
     </div>
   );
 }
 
-function App(props) {
-  console.log("render triggered!");
+function App() {
+  const [show, setShow] = Didact.useState(true);
+
   return (
     <div>
-      <Component1 />
+      <h1>Didact Engine Test Lab</h1>
+      <button onClick={() => setShow(!show)}>
+        {show
+          ? "자식 컴포넌트 제거 (언마운트)"
+          : "자식 컴포넌트 살리기 (마운트)"}
+      </button>
+      <hr />
+      {show ? <Counter /> : <p>컴포넌트가 소멸되었습니다.</p>}
     </div>
   );
 }
@@ -53,8 +61,6 @@ function App(props) {
   }
 }
 */
-const element = <App name="민재" />;
 
-// 렌더링 시작
-const container = document.getElementById("root");
-Didact.render(element, container);
+const root = document.getElementById("root");
+Didact.render(<App />, root);

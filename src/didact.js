@@ -45,7 +45,7 @@ function createDom(fiber) {
         dom[name] = fiber.props[name];
       }
     });
-  
+
   return dom;
 }
 
@@ -187,6 +187,7 @@ function updateFunctionComponent(fiber) {
   hookIndex = 0;
   wipFiber = fiber;
   fiber.hooks = [];
+  fiber.effects = [];
 
   reconcileChildren(fiber, [fiber.type(fiber.props)]);
 }
@@ -235,8 +236,71 @@ function performUnitOfWork(fiber) {
 }
 
 /**
- * Commit Phase 핵심 함수들
+ * Commit Phase와 그 이후 핵심 함수들
  */
+const hasChangeDeps = (oldDeps, newDeps) => {
+  if (oldDeps.length !== newDeps.length) return true;
+  return newDeps.some((dep, i) => !Object.is(dep, oldDeps[i]));
+};
+
+function runEffectsInCurrentTree(fiber) {
+  if (!fiber) return;
+
+  // 1. 자식부터 실행 (Bottom-up)
+  if (fiber.child) runEffectsInCurrentTree(fiber.child);
+
+  const effects = fiber.effects;
+  const oldEffects = fiber.alternate?.effects; // ?: alternate가 없을 경우 대비(초기 렌더링)
+
+  if (effects) {
+    // 마운트 시점 -> deps가 빈 배열, 빈 배열이 아닌 경우 모두 공통 실행
+    // deps가 undefined인 경우 매번 실행
+    // deps가 빈 배열인 경우 실행 x
+    // 이외의 경우 deps 비교 후 실행
+    // cleanup이 존재하는 경우에만 클린업을 실행하도록 한다.
+    // 실행하지 않는 경우 이전 클린업 함수를 그대로 유지시켜줘야 한다.
+
+    effects.forEach((effectObj, i) => {
+      const oldEffectObj = oldEffects ? oldEffects[i] : null;
+
+      // 실행되는 경우: 마운트 시점, deps가 undefined, deps가 다를 때
+      const isMount = !oldEffectObj;
+      const isDepsUndefined = effectObj.deps === undefined;
+      const isDepsChanged =
+        oldEffectObj &&
+        effectObj.deps &&
+        hasChangeDeps(oldEffectObj.deps, effectObj.deps);
+
+      // 3. 조건 중 하나라도 해당하면 실행 (단, 빈 배열[]일 때는 isDepsChanged가 false가 됨)
+      if (isMount || isDepsUndefined || isDepsChanged) {
+        // 보관했던 클린업을 실행한다.
+        if (effectObj?.cleanup) {
+          effectObj.cleanup();
+        }
+
+        // 새 이펙트 실행 및 클린업 저장
+        effectObj.cleanup = effectObj.effect();
+      }
+    });
+  }
+
+  if (fiber.sibling) {
+    runEffectsInCurrentTree(fiber.sibling);
+  }
+}
+
+function runEffects() {
+  // 클린업은 컴포넌트가 언마운트 될 때, deps가 바뀌어 새로운 이펙트가 실행되기 직전에 실행된다.
+  // 1) currentTree를 순회하면서 이펙트를 실행한다.
+  runEffectsInCurrentTree(currentRoot);
+
+  // 2) deletions 배열에 있는 파이버들의 클린업을 실행한다.
+  // 이펙트가 클린업 함수를 반환하지 않았을 경우에 대한 처리가 필요하다.
+  deletions
+    .filter((fiber) => fiber.effects)
+    .forEach((fiber) => fiber.effects.forEach((hook) => hook.cleanup()));
+}
+
 function commitRoot() {
   // 삭제할 노드를 삭제한다.
   deletions.forEach((fiber) => commitDeletion(fiber));
@@ -246,6 +310,8 @@ function commitRoot() {
 
   // 커밋이 다 끝나면 wipTree를 currentTree로 저장한다.
   currentRoot = wipRoot;
+
+  setTimeout(() => runEffects(), 0); // 브라우저가 화면을 그린 뒤 이펙트를 실행한다.
   wipRoot = null;
 }
 
@@ -364,11 +430,11 @@ function useState(initial) {
   // state를 useState 내에서 저장해야 하는 이유가 뭐지?
   const setState = (action) => {
     hook.queue.push(action);
-    
+
     if (action === hook.state) {
       return;
     }
-    
+
     // state가 변경되었다면 wipRoot를 업데이트하여 리렌더링을 트리거한다.
     wipRoot = {
       dom: currentRoot.dom,
@@ -380,6 +446,25 @@ function useState(initial) {
   };
 
   return [hook.state, setState];
+}
+
+function useEffect(callback, deps) {
+  const oldHook =
+    wipFiber.alternate && // alternate가 없을 경우 대비(초기 렌더링)
+    wipFiber.alternate.hooks && // 이전에 hook이 아예 없었던 경우 대비(코드 수정 등)
+    wipFiber.alternate.hooks[hookIndex];
+
+  const hook = {
+    effect: callback,
+    deps,
+    // oldHook이 존재하는 경우 해당 클린업을 저장, 존재하지 않으면 null
+    cleanup: oldHook ? oldHook.cleanup : null,
+  };
+
+  wipFiber.hooks.push(hook);
+  wipFiber.effects.push(hook);
+
+  hookIndex++;
 }
 
 // workLoop 실행을 위한 렌더 함수
@@ -401,6 +486,7 @@ const Didact = {
   createElement,
   render,
   useState,
+  useEffect,
 };
 
 // 브라우저 환경에서 전역 변수로 할당 (Babel Standalone 대응)
