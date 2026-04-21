@@ -239,8 +239,11 @@ function performUnitOfWork(fiber) {
  * Commit Phase와 그 이후 핵심 함수들
  */
 const hasChangeDeps = (oldDeps, newDeps) => {
-  if (oldDeps.length !== newDeps.length) return true;
-  return newDeps.some((dep, i) => !Object.is(dep, oldDeps[i]));
+  if (!oldDeps || !newDeps) return true;
+  return (
+    oldDeps.length !== newDeps.length ||
+    newDeps.some((dep, i) => dep !== oldDeps[i])
+  );
 };
 
 function runEffectsInCurrentTree(fiber) {
@@ -482,12 +485,38 @@ function useRef(initial) {
     wipFiber.alternate.hooks && // 이전에 hook이 아예 없었던 경우 대비(코드 수정 등)
     wipFiber.alternate.hooks[hookIndex];
 
-  // 리렌더링 되더라도 새로운 객체를 생성하지 않아야 하므로, oldHook이 존재한다면 이를 반환해야 한다.
+  // 리렌더링 되더라도 새로운 객체를 생성하지 않아야 하므로, oldHook이 존재한다면 이를 그대로 반환해야 한다.
   const hook = oldHook ? oldHook : { current: initial };
   wipFiber.hooks.push(hook);
   hookIndex++;
 
   return hook;
+}
+
+function useMemo(callback, deps) {
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex];
+
+  // oldHook이 존재하지 않았다면 (초기 렌더링이라면) value 실행
+  // oldHook이 존재했다면 deps 비교후 value 실행
+  const hook = {
+    value: null,
+    deps: deps,
+  };
+
+  // callback이 실행되는 경우: oldHook이 존재하지 않거나, oldHook이 존재하면서 deps가 바뀐 경우
+  if (!oldHook || hasChangeDeps(oldHook.deps, deps)) {
+    hook.value = callback();
+  } else {
+    hook.value = oldHook.value;
+  }
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+
+  return hook.value;
 }
 
 // workLoop 실행을 위한 렌더 함수
@@ -511,6 +540,7 @@ const Didact = {
   useState,
   useEffect,
   useRef,
+  useMemo,
 };
 
 // 브라우저 환경에서 전역 변수로 할당 (Babel Standalone 대응)

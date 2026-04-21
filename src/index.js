@@ -1,50 +1,42 @@
 /** @jsx Didact.createElement */
 
-function SimpleRefTest() {
-  // 1. 일반 값 보관용 Ref
-  const countRef = Didact.useRef(0);
-  // 2. DOM 접근용 Ref
-  const inputRef = Didact.useRef(null);
-  
-  const [renderCount, setRenderCount] = Didact.useState(0);
+function MemoTestApp() {
+  const [count, setCount] = Didact.useState(0);
+  const [other, setOther] = Didact.useState(0);
 
-  const handleRefClick = () => {
-    countRef.current += 1;
-    console.log("📦 현재 Ref 값:", countRef.current);
-    alert(`Ref 값을 ${countRef.current}로 올렸습니다. 하지만 화면은 그대로일 거예요!`);
-  };
-
-  const handleFocus = () => {
-    if (inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.style.backgroundColor = "#fffbe6";
-      console.log("🎯 DOM 접근 성공!");
-    } else {
-      console.error("❌ DOM이 아직 연결되지 않았습니다.");
-    }
-  };
+  // 1. 비싼 연산을 시뮬레이션 (의존성: count)
+  const expensiveValue = Didact.useMemo(() => {
+    console.log("🚀 [계산 중...] 1부터 1000까지 더하는 중 (비싼 작업)");
+    let sum = 0;
+    for (let i = 0; i <= 1000; i++) sum += i;
+    return sum + count;
+  }, [count]);
 
   return (
-    <div style="padding: 20px; border: 2px solid #333; border-radius: 10px;">
-      <h2>useRef 기본 동작 테스트</h2>
+    <div style="padding: 20px; border: 1px solid #444;">
+      <h2>useMemo 검증 테스트</h2>
+      
+      <div style="background: #f9f9f9; padding: 15px; border-radius: 5px;">
+        <p>📊 의존성 있는 값(Count): <strong>{count}</strong></p>
+        <p>📈 연산 결과: <strong>{expensiveValue}</strong></p>
+        <p>🔄 무관한 상태(Other): <strong>{other}</strong></p>
+      </div>
 
-      <section style="margin-bottom: 20px; padding: 10px; background: #f0f0f0;">
-        <h4>1. 값 보존 테스트</h4>
-        <p>현재 화면의 Ref Value: <strong>{countRef.current}</strong></p>
-        <p>리렌더링 횟수: <strong>{renderCount}</strong></p>
-        
-        <button onClick={handleRefClick}>Ref 숫자 올리기</button>
-        <button onClick={() => setRenderCount(c => c + 1)}>화면 강제 업데이트 (State)</button>
-      </section>
+      <div style="margin-top: 20px;">
+        <button onClick={() => setCount(c => c + 1)}>
+          1. Count 증가 (연산 재실행 필요)
+        </button>
+        <button onClick={() => setOther(o => o + 1)} style="margin-left: 10px;">
+          2. Other 증가 (연산 생략되어야 함)
+        </button>
+      </div>
 
-      <section style="padding: 10px; background: #e6f7ff;">
-        <h4>2. DOM 접근 테스트</h4>
-        <input ref={inputRef} placeholder="여기에 포커스가 가나요?" style="padding: 5px;" />
-        <button onClick={handleFocus} style="margin-left: 10px;">포커스 & 배경색 변경</button>
-      </section>
+      <p style="font-size: 14px; color: #666; margin-top: 15px;">
+        * 버튼 2를 누를 때 콘솔에 <strong>"🚀 [계산 중...]"</strong>이 뜨지 않아야 합격입니다!
+      </p>
     </div>
   );
 }
 
 const root = document.getElementById("root");
-Didact.render(<SimpleRefTest />, root);
+Didact.render(<MemoTestApp />, root);
