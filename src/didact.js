@@ -311,7 +311,10 @@ function commitRoot() {
   // 커밋이 다 끝나면 wipTree를 currentTree로 저장한다.
   currentRoot = wipRoot;
 
-  setTimeout(() => runEffects(), 0); // 브라우저가 화면을 그린 뒤 이펙트를 실행한다.
+  // 브라우저가 화면을 그린 뒤 이펙트를 실행한다.
+  // setTimeout 콜백은 태스크 큐에 들어가므로, 브라우저가 화면을 그린 이후에 실행된다.
+  // TODO: 4ms의 지연이 있으므로 개선할 수 있을듯?
+  setTimeout(() => runEffects(), 0);
   wipRoot = null;
 }
 
@@ -323,6 +326,12 @@ function commitDeletion(fiber, domParent) {
     }
     domParent = parentFiber.dom;
   }
+
+  // ref.current의 참조를 끊어줘야 DOM 노드가 완전히 삭제된다.
+  // if (fiber.props && fiber.props.ref) {
+  //   fiber.props.ref.current = null;
+  // }
+
   // fiber의 type이 함수형 컴포넌트인 경우 fiber.dom이 존재하지 않는다.
   // 따라서 fiber.child를 각각 모두 삭제해줘야 한다.
   if (fiber.dom) {
@@ -346,7 +355,7 @@ function commitWork(fiber) {
   // 현재는 WIP 트리가 만들어진 상태
   // WIP 트리를 검사하며 노드들을 처리하고, 이를 실제 DOM 트리에 반영한다.
 
-  // effectTag가 UPDATE인 경우
+  // effectTag가 UPDAE인 경우
   if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
     const oldProps = fiber.alternate.props;
     const newProps = fiber.props;
@@ -387,14 +396,14 @@ function commitWork(fiber) {
       parentFiber = parentFiber.parent;
     }
     parentFiber.dom.appendChild(fiber.dom);
+    // fiber의 props에 ref가 존재한다면, 이 ref에 fiber.dom을 바인딩한다.
+    if ("ref" in fiber.props) {
+      fiber.props.ref.current = fiber.dom;
+    }
   }
 
-  if (fiber.child) {
-    commitWork(fiber.child);
-  }
-  if (fiber.sibling) {
-    commitWork(fiber.sibling);
-  }
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
 }
 
 /**
@@ -467,6 +476,20 @@ function useEffect(callback, deps) {
   hookIndex++;
 }
 
+function useRef(initial) {
+  const oldHook =
+    wipFiber.alternate && // alternate가 없을 경우 대비(초기 렌더링)
+    wipFiber.alternate.hooks && // 이전에 hook이 아예 없었던 경우 대비(코드 수정 등)
+    wipFiber.alternate.hooks[hookIndex];
+
+  // 리렌더링 되더라도 새로운 객체를 생성하지 않아야 하므로, oldHook이 존재한다면 이를 반환해야 한다.
+  const hook = oldHook ? oldHook : { current: initial };
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+
+  return hook;
+}
+
 // workLoop 실행을 위한 렌더 함수
 function render(element, container) {
   // 1-1. 작업을 시작할 첫 번째 Fiber(div.root에 대한 파이버)를 만든다.
@@ -487,6 +510,7 @@ const Didact = {
   render,
   useState,
   useEffect,
+  useRef,
 };
 
 // 브라우저 환경에서 전역 변수로 할당 (Babel Standalone 대응)
