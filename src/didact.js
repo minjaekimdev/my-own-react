@@ -2,6 +2,18 @@
  * 생성 함수들
  */
 // 가상 DOM 노드 생성
+/*
+<div>
+  <h1>Title</h1>
+  Hello
+</div>
+
+-> 변환된 createElement 호출
+createElement("div", null, 
+  createElement("h1", null, "Title"),
+  "Hello"                             
+);
+*/
 function createElement(type, props, ...children) {
   return {
     type,
@@ -192,6 +204,12 @@ function updateFunctionComponent(fiber) {
   reconcileChildren(fiber, [fiber.type(fiber.props)]);
 }
 
+function updateProviderComponent(fiber) {
+  // 전달받은 value를 context의 value로 주입한다.
+  // TODO: context가 객체 형태라면 참조값이 안바뀌어서 리렌더링이 안될텐데..? 깊은 비교?
+  reconcileChildren(fiber, fiber.props.children);
+}
+
 function updateHostComponent(fiber) {
   // 1. 실제 DOM 노드를 만들어서 fiber.dom에 연결 (createDom 사용)
   // reder 함수를 처음 호출한 경우에는 이미 fiber.dom에 실제 dom이 연결된 상태이다.
@@ -209,10 +227,10 @@ function updateHostComponent(fiber) {
 
 // 가상 DOM 노드들을 재료로 삼아 파이버 트리를 만든다.
 function performUnitOfWork(fiber) {
-  const isFunctionComponent = typeof fiber.type === "function";
-
-  if (isFunctionComponent) {
+  if (typeof fiber.type === "function") {
     updateFunctionComponent(fiber);
+  } else if (fiber.type && fiber.type.$$typeof === "react.provider") {
+    updateProviderComponent(fiber);
   } else {
     updateHostComponent(fiber);
   }
@@ -493,6 +511,7 @@ function useRef(initial) {
   return hook;
 }
 
+// TODO: useMemo안에서 useRef를 활용하면 좋을 것 같다.
 function useMemo(callback, deps) {
   const oldHook =
     wipFiber.alternate &&
@@ -519,6 +538,69 @@ function useMemo(callback, deps) {
   return hook.value;
 }
 
+function hadDeepChangeDeps(oldDeps, newDeps) {
+  // 타입이 다르다면 True
+  // 타입이 같고 배열 타입이라면 -> 길이 비교, 길이 같다면 내부 재귀 비교
+  // 객체 타입이라면 -> 프로퍼티 개수 비교, 개수가 같다면 프로퍼티별로 재귀 비교
+
+  // 디폴트 False 리턴하기
+}
+function useDeepMemo(callback, deps) {
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex];
+
+  // oldHook이 존재하지 않았다면 (초기 렌더링이라면) value 실행
+  // oldHook이 존재했다면 deps 비교후 value 실행
+  const hook = {
+    value: null,
+    deps: deps,
+  };
+
+  // callback이 실행되는 경우: oldHook이 존재하지 않거나, oldHook이 존재하면서 deps가 바뀐 경우
+  if (!oldHook || hasChangeDeps(oldHook.deps, deps)) {
+    hook.value = callback();
+  } else {
+    hook.value = oldHook.value;
+  }
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+
+  return hook.value;
+}
+
+function createContext(defaultValue) {
+  const context = {
+    _currentValue: defaultValue,
+    Provider: {
+      $$typeof: "react.provider",
+      _context: null,
+    },
+  };
+  // Provider에서 곧바로 저장소(context)에 접근할 수 있어야 하기 때문에 연결해준다.
+  context.Provider._context = context;
+  return context;
+}
+
+function useContext(context) {
+  // 현재 실행 중인 파이버에서부터 위로(parent방향) 올라가며 가장 가까운 Provider를 찾는다.
+  // 해당 Provider가 내가 찾는 Context.Provider인지 확인한다.
+  // 찾았다면 그 파이버가 들고 있는 props.value를 반환한다.
+  // 루트까지 못 찾았다면 Context 객체 생성 시 설정한 defaultValue를 반환한다.
+  let fiber = wipFiber.parent; // 부모부터 탐색 시작
+
+  while (fiber) {
+    if (fiber.type === context.Provider) {
+      return fiber.props.value;
+    }
+    fiber = fiber.parent; // 위로 한 칸 이동
+  }
+  // 찾는 Provider가 없다면 default value를 리턴
+  return context._currentValue;
+}
+
 // workLoop 실행을 위한 렌더 함수
 function render(element, container) {
   // 1-1. 작업을 시작할 첫 번째 Fiber(div.root에 대한 파이버)를 만든다.
@@ -541,6 +623,8 @@ const Didact = {
   useEffect,
   useRef,
   useMemo,
+  createContext,
+  useContext,
 };
 
 // 브라우저 환경에서 전역 변수로 할당 (Babel Standalone 대응)
