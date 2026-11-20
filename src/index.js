@@ -1,3 +1,4 @@
+// Babel에게 JSX를 React.createElement가 아닌 Didact.createElement로 변환하라는 명령
 /** @jsx Didact.createElement */
 
 // 1. 컨텍스트 생성 (기본값: "🏃 기본 모드")

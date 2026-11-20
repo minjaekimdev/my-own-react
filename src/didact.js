@@ -71,7 +71,7 @@ let nextUnitOfWork = null;
 // 공사가 다 끝났을 때(nextUnitOfWork 가 null이 되었을 때) 트리의 꼭대기로 돌아가 한번에 반영해야 함(Commit)
 let wipRoot = null;
 
-// 가장 최근에 커밋된 이전 fiber 트리의 루트
+// 현재 시점의 실제 DOM과 일치하는 파이버 트리의 루트
 let currentRoot = null;
 
 // currentRoot에는 있었지만, wipRoot에는 사라진 파이버들을 모아두는 배열
@@ -90,12 +90,12 @@ let hookIndex = 0;
 // workLoop를 통해 브라우저가 한가한 경우 작업을 실행한다.
 function workLoop(deadline) {
   let shouldYield = false;
-  // 처리해야 할 작업 단위가 존재하고, 시간이 충분할 때
+  // 처리해야 할 작업 단위가 존재하고, 시간이 충분할 때(프레임 잔여 시간이 1ms 이상일 때)
+  // 브라우저의 상태를 보면서 일을 시킬지 말지 결정한다.
   while (nextUnitOfWork && !shouldYield) {
-    // 브라우저의 상태를 보면서 일을 시킬지 말지 결정한다.
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
 
-    // deadline.timeRemaining(): 지금부터 다음 화면을 그리기까지 정확히 몇 밀리초가 남았는지 알려준다.
+    // deadline.timeRemaining(): 지금부터 화면을 그리기까지 정확히 몇 밀리초가 남았는지 알려준다.
     shouldYield = deadline.timeRemaining() < 1;
   }
   if (!nextUnitOfWork && wipRoot) {
@@ -212,7 +212,7 @@ function updateProviderComponent(fiber) {
 
 function updateHostComponent(fiber) {
   // 1. 실제 DOM 노드를 만들어서 fiber.dom에 연결 (createDom 사용)
-  // reder 함수를 처음 호출한 경우에는 이미 fiber.dom에 실제 dom이 연결된 상태이다.
+  // render 함수를 처음 호출한 경우에는 이미 fiber.dom에 실제 dom이 연결된 상태이다.
   // 따라서 그렇지 않은 경우에만 실제 DOM 노드를 만들어 연결해준다.
   if (!fiber.dom) {
     // createDom으로 실제 DOM 노드 만들기
@@ -232,6 +232,7 @@ function performUnitOfWork(fiber) {
   } else if (fiber.type && fiber.type.$$typeof === "react.provider") {
     updateProviderComponent(fiber);
   } else {
+    // 파이버가 호스트 컴포넌트(ex. <div> 등)인 경우 실행
     updateHostComponent(fiber);
   }
 
@@ -457,7 +458,6 @@ function useState(initial) {
   wipFiber.hooks.push(hook);
   hookIndex++;
 
-  // state를 useState 내에서 저장해야 하는 이유가 뭐지?
   const setState = (action) => {
     hook.queue.push(action);
 
@@ -491,6 +491,7 @@ function useEffect(callback, deps) {
     cleanup: oldHook ? oldHook.cleanup : null,
   };
 
+  // 렌더링 시에는 콜백을 배열에 밀어넣었다가, 추후 한꺼번에 실행한다.
   wipFiber.hooks.push(hook);
   wipFiber.effects.push(hook);
 
@@ -542,7 +543,6 @@ function hadDeepChangeDeps(oldDeps, newDeps) {
   // 타입이 다르다면 True
   // 타입이 같고 배열 타입이라면 -> 길이 비교, 길이 같다면 내부 재귀 비교
   // 객체 타입이라면 -> 프로퍼티 개수 비교, 개수가 같다면 프로퍼티별로 재귀 비교
-
   // 디폴트 False 리턴하기
 }
 function useDeepMemo(callback, deps) {
